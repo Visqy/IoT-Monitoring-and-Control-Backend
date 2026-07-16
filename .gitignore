@@ -1,0 +1,15 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+
+# User-specific files
+*.user
+
+# Environment secrets - JANGAN commit
+.env
+IotBackend/.env
+add_user_secrets_commands.txt
+
+# Dokumen kerja lokal - tidak untuk repo publik
+CLAUDE.md
+docs/

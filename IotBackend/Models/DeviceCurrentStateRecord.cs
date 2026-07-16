@@ -1,0 +1,19 @@
+namespace IotBackend.Models;
+
+/// <summary>
+/// Representasi satu baris tabel <c>device_current_state</c> untuk keperluan baca
+/// (beda dari <see cref="DeviceCurrentState"/> yang khusus dipakai untuk upsert dari telemetry).
+/// </summary>
+public sealed class DeviceCurrentStateRecord
+{
+    public required string DeviceId { get; init; }
+    public required string Status { get; init; }
+
+    public double? VoltageA { get; init; }
+    public double? VoltageB { get; init; }
+    public double? FrequencyA { get; init; }
+    public double? FrequencyB { get; init; }
+    public bool? RelayState { get; init; }
+
+    public DateTimeOffset? LastSeen { get; init; }
+}

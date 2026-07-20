@@ -1,3 +1,4 @@
+using Dapper;
 using IotBackend.Models;
 using Npgsql;
 
@@ -13,50 +14,38 @@ public sealed class DeviceRepository
         _dataSource = dataSource;
     }
 
+    // LEFT JOIN device_current_state karena devices.status tidak lagi ditulis (single writer
+    // buat status ada di device_current_state, lihat docs/DATABASE_SCHEMA.md) — status yang
+    // benar dibaca dari sana, bukan dari kolom devices.status yang selalu 'unknown'.
     private const string ListSql = """
-        SELECT device_id, name, location, status, updated_at
-        FROM devices
-        ORDER BY device_id
+        SELECT d.device_id, d.name, d.location, COALESCE(dcs.status, 'unknown') AS status, d.updated_at
+        FROM devices d
+        LEFT JOIN device_current_state dcs ON dcs.device_id = d.device_id
+        ORDER BY d.device_id
         """;
 
     public async Task<List<DeviceRecord>> ListAsync(CancellationToken cancellationToken = default)
     {
-        var results = new List<DeviceRecord>();
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        await using var command = _dataSource.CreateCommand(ListSql);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            results.Add(new DeviceRecord
-            {
-                DeviceId = reader.GetString(0),
-                Name = reader.IsDBNull(1) ? null : reader.GetString(1),
-                Location = reader.IsDBNull(2) ? null : reader.GetString(2),
-                Status = reader.GetString(3),
-                UpdatedAt = reader.GetFieldValue<DateTimeOffset>(4)
-            });
-        }
-
-        return results;
+        var rows = await connection.QueryAsync<DeviceRecord>(new CommandDefinition(ListSql, cancellationToken: cancellationToken));
+        return rows.AsList();
     }
 
     // Auto-register: dipanggil saat telemetry pertama dari sebuah device masuk (lihat
-    // TelemetryService). name/location sengaja dibiarkan NULL — itu data administratif
-    // yang diisi manual, bukan hasil deteksi otomatis dari telemetry.
-    private const string UpsertSql = """
-        INSERT INTO devices (device_id, status, updated_at)
-        VALUES (@device_id, @status, NOW())
-        ON CONFLICT (device_id) DO UPDATE SET
-            status     = EXCLUDED.status,
-            updated_at = NOW()
+    // TelemetryService). name/location sengaja dibiarkan NULL — itu data administratif yang
+    // diisi manual. status TIDAK disentuh di sini sama sekali (lihat ListSql di atas).
+    private const string EnsureRegisteredSql = """
+        INSERT INTO devices (device_id, updated_at)
+        VALUES (@device_id, NOW())
+        ON CONFLICT (device_id) DO NOTHING
         """;
 
-    public async Task UpsertAsync(string deviceId, string status, CancellationToken cancellationToken = default)
+    public async Task EnsureRegisteredAsync(string deviceId, CancellationToken cancellationToken = default)
     {
-        await using var command = _dataSource.CreateCommand(UpsertSql);
-        command.Parameters.AddWithValue("device_id", deviceId);
-        command.Parameters.AddWithValue("status", status);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await connection.ExecuteAsync(
+            new CommandDefinition(EnsureRegisteredSql, new { device_id = deviceId }, cancellationToken: cancellationToken));
     }
 }

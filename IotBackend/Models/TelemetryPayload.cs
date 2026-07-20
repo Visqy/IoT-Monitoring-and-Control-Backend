@@ -8,7 +8,8 @@ public sealed class TelemetryPayload
 {
     public double VoltageA { get; init; }
     public double VoltageB { get; init; }
-    public double FreqA { get; init; }
+    public double CurrentB { get; init; }
+    public double PowerB { get; init; }
     public double FreqB { get; init; }
 
     /// <summary>Waktu dari ESP, format saat ini "yyyy-MM-dd HH:mm:ss" tanpa timezone. Bisa null.</summary>

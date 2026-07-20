@@ -7,7 +7,7 @@ namespace IotBackend.BackgroundServices;
 /// <summary>
 /// Memindai <c>relay_commands</c> secara berkala dan menandai command yang masih <c>sent</c>
 /// namun tak kunjung dikonfirmasi <c>relay/state</c> melewati batas waktu menjadi <c>timeout</c>.
-/// Repository scoped diresolve lewat scope per-tick.
+/// Repository scoped diresolve lewat scope per-tick (hosted service ini singleton, CLAUDE.md §4).
 /// </summary>
 public sealed class RelayCommandTimeoutService : BackgroundService
 {

@@ -11,8 +11,8 @@ namespace IotBackend.BackgroundServices;
 /// panggil Service yang sesuai lewat scope baru per pesan (CLAUDE.md §4). Tidak inject
 /// service scoped langsung ke constructor — pakai IServiceScopeFactory.
 ///
-/// Subscribe ke telemetry (<c>+/pzem</c>), konfirmasi relay (<c>+/relay/state</c>), dan status
-/// online/offline (<c>+/status</c>, LWT — lihat docs/DATABASE_SCHEMA.md §"Deteksi online/offline").
+/// Subscribe ke telemetry (<c>+/pzem</c>) dan konfirmasi relay (<c>+/relay/state</c>).
+/// <c>+/status</c> belum ditangani (di luar scope fase saat ini).
 /// </summary>
 public sealed class MqttSubscriberService : BackgroundService
 {
@@ -77,7 +77,6 @@ public sealed class MqttSubscriberService : BackgroundService
     {
         await _mqtt.SubscribeAsync(_options.TelemetryTopic, cancellationToken);
         await _mqtt.SubscribeAsync(_options.RelayStateTopic, cancellationToken);
-        await _mqtt.SubscribeAsync(_options.StatusTopic, cancellationToken);
     }
 
     private async Task HandleMessageAsync(MqttApplicationMessageReceivedEventArgs e)
@@ -106,11 +105,6 @@ public sealed class MqttSubscriberService : BackgroundService
             {
                 var relayCommandService = scope.ServiceProvider.GetRequiredService<RelayCommandService>();
                 await relayCommandService.ProcessRelayStateAsync(deviceId, payloadText);
-            }
-            else if (topic.EndsWith("/status", StringComparison.Ordinal))
-            {
-                var deviceService = scope.ServiceProvider.GetRequiredService<DeviceService>();
-                await deviceService.ProcessStatusMessageAsync(deviceId, payloadText);
             }
             else
             {

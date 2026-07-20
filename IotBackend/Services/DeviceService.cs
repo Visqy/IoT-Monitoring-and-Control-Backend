@@ -11,14 +11,11 @@ public sealed class DeviceService
 {
     private readonly DeviceRepository _deviceRepository;
     private readonly DeviceStateRepository _deviceStateRepository;
-    private readonly ILogger<DeviceService> _logger;
 
-    public DeviceService(
-        DeviceRepository deviceRepository, DeviceStateRepository deviceStateRepository, ILogger<DeviceService> logger)
+    public DeviceService(DeviceRepository deviceRepository, DeviceStateRepository deviceStateRepository)
     {
         _deviceRepository = deviceRepository;
         _deviceStateRepository = deviceStateRepository;
-        _logger = logger;
     }
 
     public async Task<List<DeviceSummaryResponse>> ListDevicesAsync(CancellationToken cancellationToken = default)
@@ -50,36 +47,10 @@ public sealed class DeviceService
             Status = state.Status,
             VoltageA = state.VoltageA,
             VoltageB = state.VoltageB,
-            CurrentB = state.CurrentB,
-            PowerB = state.PowerB,
+            FrequencyA = state.FrequencyA,
             FrequencyB = state.FrequencyB,
             RelayState = state.RelayState,
             LastSeen = state.LastSeen
         };
-    }
-
-    /// <summary>
-    /// Dipanggil MqttSubscriberService saat pesan <c>{deviceId}/status</c> (LWT) masuk. Payload
-    /// plain string (bukan JSON) <c>"online"</c>/<c>"offline"</c>, retained -- lihat
-    /// docs/MQTT_CONTRACT.md §"Status device". <c>last_seen</c> cuma dibump untuk "online"
-    /// (device benar-benar baru connect) -- "offline" itu LWT dari broker, bukan aktivitas device.
-    /// </summary>
-    public async Task ProcessStatusMessageAsync(string deviceId, string rawPayload, CancellationToken cancellationToken = default)
-    {
-        var status = rawPayload.Trim().ToLowerInvariant();
-        if (status is not ("online" or "offline"))
-        {
-            _logger.LogWarning("Payload status dari {DeviceId} tidak dikenali, diabaikan. Raw: {Raw}", deviceId, rawPayload);
-            return;
-        }
-
-        var lastSeen = status == "online" ? DateTimeOffset.UtcNow : (DateTimeOffset?)null;
-        var rowsAffected = await _deviceStateRepository.UpdateStatusAsync(deviceId, status, lastSeen, cancellationToken);
-        if (rowsAffected == 0)
-        {
-            _logger.LogWarning(
-                "device_current_state untuk {DeviceId} belum ada (belum pernah kirim telemetry), status '{Status}' tidak tersimpan.",
-                deviceId, status);
-        }
     }
 }

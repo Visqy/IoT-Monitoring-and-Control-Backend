@@ -8,7 +8,6 @@
 # Environment secrets - JANGAN commit
 .env
 IotBackend/.env
-IotBackend/appsettings.json
 add_user_secrets_commands.txt
 
 # Dokumen kerja lokal - tidak untuk repo publik

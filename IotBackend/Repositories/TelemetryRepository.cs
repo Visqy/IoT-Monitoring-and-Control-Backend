@@ -1,12 +1,12 @@
-using Dapper;
 using IotBackend.Models;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace IotBackend.Repositories;
 
 /// <summary>
 /// Akses tabel <c>telemetry</c> (raw history). SQL parameterized manual via Npgsql,
-/// mapping hasil query pakai Dapper (lihat CLAUDE.md §2/§3) — tanpa EF Core, tanpa business logic.
+/// tanpa ORM dan tanpa business logic (lihat CLAUDE.md §3).
 /// </summary>
 public sealed class TelemetryRepository
 {
@@ -19,35 +19,30 @@ public sealed class TelemetryRepository
 
     private const string InsertSql = """
         INSERT INTO telemetry
-            (device_id, topic, voltage_a, voltage_b, current_b, power_b, frequency_b, device_timestamp, raw_payload)
+            (device_id, topic, voltage_a, voltage_b, frequency_a, frequency_b, device_timestamp, raw_payload)
         VALUES
-            (@device_id, @topic, @voltage_a, @voltage_b, @current_b, @power_b, @frequency_b, @device_timestamp, @raw_payload::jsonb)
+            (@device_id, @topic, @voltage_a, @voltage_b, @frequency_a, @frequency_b, @device_timestamp, @raw_payload)
         """;
 
     public async Task InsertAsync(TelemetryRecord record, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = _dataSource.CreateCommand(InsertSql);
+        command.Parameters.AddWithValue("device_id", record.DeviceId);
+        command.Parameters.AddWithValue("topic", record.Topic);
+        command.Parameters.AddWithValue("voltage_a", record.VoltageA);
+        command.Parameters.AddWithValue("voltage_b", record.VoltageB);
+        command.Parameters.AddWithValue("frequency_a", record.FrequencyA);
+        command.Parameters.AddWithValue("frequency_b", record.FrequencyB);
+        command.Parameters.AddWithValue("device_timestamp", (object?)record.DeviceTimestamp ?? DBNull.Value);
+        command.Parameters.Add(new NpgsqlParameter("raw_payload", NpgsqlDbType.Jsonb) { Value = record.RawPayload });
 
-        var parameters = new
-        {
-            device_id = record.DeviceId,
-            topic = record.Topic,
-            voltage_a = record.VoltageA,
-            voltage_b = record.VoltageB,
-            current_b = record.CurrentB,
-            power_b = record.PowerB,
-            frequency_b = record.FrequencyB,
-            device_timestamp = record.DeviceTimestamp,
-            raw_payload = record.RawPayload
-        };
-
-        await connection.ExecuteAsync(new CommandDefinition(InsertSql, parameters, cancellationToken: cancellationToken));
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     // Urut & filter pakai received_at, bukan device_timestamp — device_timestamp bisa
     // null/tidak akurat kalau ESP belum NTP sync (lihat docs/MQTT_CONTRACT.md).
     private const string GetHistorySql = """
-        SELECT id, device_id, topic, voltage_a, voltage_b, current_b, power_b, frequency_b, device_timestamp, received_at
+        SELECT id, device_id, topic, voltage_a, voltage_b, frequency_a, frequency_b, device_timestamp, received_at
         FROM telemetry
         WHERE device_id = @device_id
           AND (@from IS NULL OR received_at >= @from)
@@ -63,14 +58,31 @@ public sealed class TelemetryRepository
         int limit,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        var results = new List<TelemetryHistoryRecord>();
 
-        // .ToUniversalTime() wajib -- Npgsql cuma terima DateTimeOffset Offset=0 untuk kolom
-        // timestamptz; caller (query string) bisa saja kirim offset non-UTC.
-        var parameters = new { device_id = deviceId, from = from?.ToUniversalTime(), to = to?.ToUniversalTime(), limit };
-        var rows = await connection.QueryAsync<TelemetryHistoryRecord>(
-            new CommandDefinition(GetHistorySql, parameters, cancellationToken: cancellationToken));
+        await using var command = _dataSource.CreateCommand(GetHistorySql);
+        command.Parameters.AddWithValue("device_id", deviceId);
+        command.Parameters.Add(new NpgsqlParameter("from", NpgsqlDbType.TimestampTz) { Value = (object?)from ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.TimestampTz) { Value = (object?)to ?? DBNull.Value });
+        command.Parameters.AddWithValue("limit", limit);
 
-        return rows.AsList();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(new TelemetryHistoryRecord
+            {
+                Id = reader.GetInt64(0),
+                DeviceId = reader.GetString(1),
+                Topic = reader.GetString(2),
+                VoltageA = reader.IsDBNull(3) ? null : reader.GetDouble(3),
+                VoltageB = reader.IsDBNull(4) ? null : reader.GetDouble(4),
+                FrequencyA = reader.IsDBNull(5) ? null : reader.GetDouble(5),
+                FrequencyB = reader.IsDBNull(6) ? null : reader.GetDouble(6),
+                DeviceTimestamp = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
+                ReceivedAt = reader.GetFieldValue<DateTimeOffset>(8)
+            });
+        }
+
+        return results;
     }
 }

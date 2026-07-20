@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using IotBackend.Contracts;
 using IotBackend.Infrastructure;
@@ -112,7 +111,6 @@ public sealed class RelayCommandService
         Guid? commandId = null;
         bool? actualState = null;
         string? source = null;
-        string? executedAtRaw = null;
 
         try
         {
@@ -122,7 +120,6 @@ public sealed class RelayCommandService
                 commandId = payload.CommandId;
                 actualState = ParseMqttState(payload.State);
                 source = payload.Source;
-                executedAtRaw = payload.ExecutedAt;
             }
         }
         catch (JsonException)
@@ -147,19 +144,10 @@ public sealed class RelayCommandService
         }
         else
         {
-            // commandId null = perubahan tak ter-tracking dari dashboard (RFID/boot) atau firmware
-            // lama (string polos, tanpa source). INSERT baris baru langsung 'executed' supaya tetap
-            // ada audit trail (docs/DATABASE_SCHEMA.md §"Kenapa command_id VARCHAR").
-            var effectiveSource = source ?? "unknown";
-            var syntheticCommandId = $"{effectiveSource}-{Guid.NewGuid():N}";
-            var acknowledgedAt = ParseExecutedAt(executedAtRaw) ?? DateTimeOffset.UtcNow;
-
-            await _relayCommandRepository.InsertExecutedAsync(
-                syntheticCommandId, deviceId, actualState.Value, effectiveSource, acknowledgedAt, rawPayload, cancellationToken);
-
-            _logger.LogInformation(
-                "relay/state dari {DeviceId} dipicu oleh {Source} (tanpa commandId) -> relay_commands {CommandId}.",
-                deviceId, effectiveSource, syntheticCommandId);
+            // commandId null = perubahan tak ter-tracking (RFID/boot) atau firmware lama (string polos).
+            // Tampilkan source biar bisa dibedakan sumber pemicunya.
+            var trigger = source ?? "firmware lama/tak diketahui";
+            _logger.LogInformation("relay/state dari {DeviceId} dipicu oleh {Source} (tanpa commandId).", deviceId, trigger);
         }
 
         var stateRowsAffected = await _deviceStateRepository.UpdateRelayStateAsync(deviceId, actualState.Value, cancellationToken);
@@ -179,11 +167,4 @@ public sealed class RelayCommandService
         "OFF" => false,
         _ => null
     };
-
-    // .ToUniversalTime() wajib -- Npgsql cuma terima DateTimeOffset Offset=0 untuk kolom
-    // timestamptz, payload firmware kirim offset lokal (mis. +07:00) yang harus dinormalisasi dulu.
-    private static DateTimeOffset? ParseExecutedAt(string? raw) =>
-        !string.IsNullOrWhiteSpace(raw) && DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
-            ? parsed.ToUniversalTime()
-            : null;
 }

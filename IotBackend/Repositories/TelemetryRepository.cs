@@ -19,9 +19,9 @@ public sealed class TelemetryRepository
 
     private const string InsertSql = """
         INSERT INTO telemetry
-            (device_id, topic, voltage_a, voltage_b, current_b, power_b, frequency_b, device_timestamp, raw_payload)
+            (device_id, topic, voltage_a, voltage_b, current_b, power_b, energy_b, frequency_b, device_timestamp, raw_payload)
         VALUES
-            (@device_id, @topic, @voltage_a, @voltage_b, @current_b, @power_b, @frequency_b, @device_timestamp, @raw_payload::jsonb)
+            (@device_id, @topic, @voltage_a, @voltage_b, @current_b, @power_b, @energy_b, @frequency_b, @device_timestamp, @raw_payload::jsonb)
         """;
 
     public async Task InsertAsync(TelemetryRecord record, CancellationToken cancellationToken = default)
@@ -36,6 +36,7 @@ public sealed class TelemetryRepository
             voltage_b = record.VoltageB,
             current_b = record.CurrentB,
             power_b = record.PowerB,
+            energy_b = record.EnergyB,
             frequency_b = record.FrequencyB,
             device_timestamp = record.DeviceTimestamp,
             raw_payload = record.RawPayload
@@ -47,7 +48,7 @@ public sealed class TelemetryRepository
     // Urut & filter pakai received_at, bukan device_timestamp — device_timestamp bisa
     // null/tidak akurat kalau ESP belum NTP sync (lihat docs/MQTT_CONTRACT.md).
     private const string GetHistorySql = """
-        SELECT id, device_id, topic, voltage_a, voltage_b, current_b, power_b, frequency_b, device_timestamp, received_at
+        SELECT id, device_id, topic, voltage_a, voltage_b, current_b, power_b, energy_b, frequency_b, device_timestamp, received_at
         FROM telemetry
         WHERE device_id = @device_id
           AND (@from IS NULL OR received_at >= @from)

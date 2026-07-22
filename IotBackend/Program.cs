@@ -17,6 +17,13 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 
+// PoC belum ada auth berbasis cookie/credential, jadi AllowAnyOrigin aman -- kalau nanti ada
+// auth session/cookie, ganti ke daftar origin eksplisit (jangan AllowAnyOrigin + AllowCredentials).
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+});
+
 var connectionString = builder.Configuration.GetConnectionString("Postgres");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
@@ -63,6 +70,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors();
 
 app.UseAuthorization();
 

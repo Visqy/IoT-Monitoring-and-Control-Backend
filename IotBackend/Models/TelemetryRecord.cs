@@ -13,6 +13,7 @@ public sealed class TelemetryRecord
     public double VoltageB { get; init; }
     public double CurrentB { get; init; }
     public double PowerB { get; init; }
+    public double EnergyB { get; init; }
     public double FrequencyB { get; init; }
 
     /// <summary>Waktu dari device (nullable — null kalau payload tidak punya / gagal di-parse).</summary>

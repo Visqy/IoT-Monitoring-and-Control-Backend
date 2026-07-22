@@ -14,6 +14,7 @@ public sealed class DeviceCurrentState
     public double VoltageB { get; init; }
     public double CurrentB { get; init; }
     public double PowerB { get; init; }
+    public double EnergyB { get; init; }
     public double FrequencyB { get; init; }
 
     public DateTimeOffset LastSeen { get; init; }

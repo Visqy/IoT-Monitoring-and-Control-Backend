@@ -76,6 +76,7 @@ public sealed class TelemetryService
             VoltageB = payload.VoltageB,
             CurrentB = payload.CurrentB,
             PowerB = payload.PowerB,
+            EnergyB = payload.EnergyB,
             FrequencyB = payload.FreqB,
             DeviceTimestamp = deviceTimestamp,
             RawPayload = rawPayload
@@ -90,6 +91,7 @@ public sealed class TelemetryService
             VoltageB = payload.VoltageB,
             CurrentB = payload.CurrentB,
             PowerB = payload.PowerB,
+            EnergyB = payload.EnergyB,
             FrequencyB = payload.FreqB,
             LastSeen = receivedAt
         };
@@ -102,8 +104,8 @@ public sealed class TelemetryService
         await _deviceRepository.EnsureRegisteredAsync(deviceId, cancellationToken);
 
         _logger.LogInformation(
-            "Telemetry {DeviceId} tersimpan (Va={Va} Vb={Vb} Ib={Ib} Pb={Pb} Fb={Fb}).",
-            deviceId, payload.VoltageA, payload.VoltageB, payload.CurrentB, payload.PowerB, payload.FreqB);
+            "Telemetry {DeviceId} tersimpan (Va={Va} Vb={Vb} Ib={Ib} Pb={Pb} Eb={Eb} Fb={Fb}).",
+            deviceId, payload.VoltageA, payload.VoltageB, payload.CurrentB, payload.PowerB, payload.EnergyB, payload.FreqB);
     }
 
     public async Task<List<TelemetryHistoryResponse>> GetHistoryAsync(
@@ -123,6 +125,7 @@ public sealed class TelemetryService
             VoltageB = r.VoltageB,
             CurrentB = r.CurrentB,
             PowerB = r.PowerB,
+            EnergyB = r.EnergyB,
             FrequencyB = r.FrequencyB,
             DeviceTimestamp = r.DeviceTimestamp,
             ReceivedAt = r.ReceivedAt

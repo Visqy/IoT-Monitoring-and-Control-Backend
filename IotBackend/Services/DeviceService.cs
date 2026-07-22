@@ -52,6 +52,7 @@ public sealed class DeviceService
             VoltageB = state.VoltageB,
             CurrentB = state.CurrentB,
             PowerB = state.PowerB,
+            EnergyB = state.EnergyB,
             FrequencyB = state.FrequencyB,
             RelayState = state.RelayState,
             LastSeen = state.LastSeen

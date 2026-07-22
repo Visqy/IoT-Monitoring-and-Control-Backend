@@ -9,6 +9,7 @@ public sealed class TelemetryHistoryResponse
     public double? VoltageB { get; init; }
     public double? CurrentB { get; init; }
     public double? PowerB { get; init; }
+    public double? EnergyB { get; init; }
     public double? FrequencyB { get; init; }
     public DateTimeOffset? DeviceTimestamp { get; init; }
     public DateTimeOffset ReceivedAt { get; init; }

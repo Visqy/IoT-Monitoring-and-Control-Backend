@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS telemetry (
     voltage_b   DOUBLE PRECISION,
     current_b   DOUBLE PRECISION,
     power_b     DOUBLE PRECISION,
+    energy_b    DOUBLE PRECISION,
     frequency_b DOUBLE PRECISION,
 
     device_timestamp TIMESTAMPTZ,
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS device_current_state (
     voltage_b   DOUBLE PRECISION,
     current_b   DOUBLE PRECISION,
     power_b     DOUBLE PRECISION,
+    energy_b    DOUBLE PRECISION,
     frequency_b DOUBLE PRECISION,
     relay_state BOOLEAN,
 

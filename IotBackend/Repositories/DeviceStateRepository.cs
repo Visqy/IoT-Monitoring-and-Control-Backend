@@ -1,3 +1,4 @@
+using Dapper;
 using IotBackend.Models;
 using Npgsql;
 
@@ -19,14 +20,15 @@ public sealed class DeviceStateRepository
     // nilainya (yang diisi dari +/relay/state, Fase 4) tidak tertimpa jadi null.
     private const string UpsertSql = """
         INSERT INTO device_current_state
-            (device_id, status, voltage_a, voltage_b, frequency_a, frequency_b, last_seen, updated_at)
+            (device_id, status, voltage_a, voltage_b, current_b, power_b, frequency_b, last_seen, updated_at)
         VALUES
-            (@device_id, @status, @voltage_a, @voltage_b, @frequency_a, @frequency_b, @last_seen, NOW())
+            (@device_id, @status, @voltage_a, @voltage_b, @current_b, @power_b, @frequency_b, @last_seen, NOW())
         ON CONFLICT (device_id) DO UPDATE SET
             status      = EXCLUDED.status,
             voltage_a   = EXCLUDED.voltage_a,
             voltage_b   = EXCLUDED.voltage_b,
-            frequency_a = EXCLUDED.frequency_a,
+            current_b   = EXCLUDED.current_b,
+            power_b     = EXCLUDED.power_b,
             frequency_b = EXCLUDED.frequency_b,
             last_seen   = EXCLUDED.last_seen,
             updated_at  = NOW()
@@ -34,20 +36,25 @@ public sealed class DeviceStateRepository
 
     public async Task UpsertFromTelemetryAsync(DeviceCurrentState state, CancellationToken cancellationToken = default)
     {
-        await using var command = _dataSource.CreateCommand(UpsertSql);
-        command.Parameters.AddWithValue("device_id", state.DeviceId);
-        command.Parameters.AddWithValue("status", state.Status);
-        command.Parameters.AddWithValue("voltage_a", state.VoltageA);
-        command.Parameters.AddWithValue("voltage_b", state.VoltageB);
-        command.Parameters.AddWithValue("frequency_a", state.FrequencyA);
-        command.Parameters.AddWithValue("frequency_b", state.FrequencyB);
-        command.Parameters.AddWithValue("last_seen", state.LastSeen);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        var parameters = new
+        {
+            device_id = state.DeviceId,
+            status = state.Status,
+            voltage_a = state.VoltageA,
+            voltage_b = state.VoltageB,
+            current_b = state.CurrentB,
+            power_b = state.PowerB,
+            frequency_b = state.FrequencyB,
+            last_seen = state.LastSeen
+        };
+
+        await connection.ExecuteAsync(new CommandDefinition(UpsertSql, parameters, cancellationToken: cancellationToken));
     }
 
     private const string GetByDeviceIdSql = """
-        SELECT device_id, status, voltage_a, voltage_b, frequency_a, frequency_b, relay_state, last_seen
+        SELECT device_id, status, voltage_a, voltage_b, current_b, power_b, frequency_b, relay_state, last_seen
         FROM device_current_state
         WHERE device_id = @device_id
         """;
@@ -55,41 +62,62 @@ public sealed class DeviceStateRepository
     /// <summary>Null kalau deviceId belum pernah mengirim data sama sekali.</summary>
     public async Task<DeviceCurrentStateRecord?> GetByDeviceIdAsync(string deviceId, CancellationToken cancellationToken = default)
     {
-        await using var command = _dataSource.CreateCommand(GetByDeviceIdSql);
-        command.Parameters.AddWithValue("device_id", deviceId);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return new DeviceCurrentStateRecord
-        {
-            DeviceId = reader.GetString(0),
-            Status = reader.GetString(1),
-            VoltageA = reader.IsDBNull(2) ? null : reader.GetDouble(2),
-            VoltageB = reader.IsDBNull(3) ? null : reader.GetDouble(3),
-            FrequencyA = reader.IsDBNull(4) ? null : reader.GetDouble(4),
-            FrequencyB = reader.IsDBNull(5) ? null : reader.GetDouble(5),
-            RelayState = reader.IsDBNull(6) ? null : reader.GetBoolean(6),
-            LastSeen = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7)
-        };
+        return await connection.QuerySingleOrDefaultAsync<DeviceCurrentStateRecord>(
+            new CommandDefinition(GetByDeviceIdSql, new { device_id = deviceId }, cancellationToken: cancellationToken));
     }
 
+    // last_seen ikut dibump di sini juga -- deteksi offline (docs/DATABASE_SCHEMA.md) pakai
+    // last_seen dari pesan MQTT apapun, bukan cuma telemetry/status, supaya device yang aktif
+    // kirim relay/state tapi tidak kirim status tetap dianggap online oleh sweep.
     private const string UpdateRelayStateSql = """
         UPDATE device_current_state
-        SET relay_state = @relay_state, updated_at = NOW()
+        SET relay_state = @relay_state, last_seen = NOW(), updated_at = NOW()
         WHERE device_id = @device_id
         """;
 
     /// <summary>Return jumlah baris ter-update — 0 berarti device belum pernah kirim telemetry.</summary>
     public async Task<int> UpdateRelayStateAsync(string deviceId, bool relayState, CancellationToken cancellationToken = default)
     {
-        await using var command = _dataSource.CreateCommand(UpdateRelayStateSql);
-        command.Parameters.AddWithValue("device_id", deviceId);
-        command.Parameters.AddWithValue("relay_state", relayState);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        return await command.ExecuteNonQueryAsync(cancellationToken);
+        var parameters = new { device_id = deviceId, relay_state = relayState };
+        return await connection.ExecuteAsync(new CommandDefinition(UpdateRelayStateSql, parameters, cancellationToken: cancellationToken));
+    }
+
+    // last_seen dibump hanya kalau caller mengirim nilai (device "online" beneran connect) --
+    // untuk "offline" (LWT dari broker) last_seen TIDAK berubah, lihat DeviceService.ProcessStatusMessageAsync.
+    private const string UpdateStatusSql = """
+        UPDATE device_current_state
+        SET status = @status, last_seen = COALESCE(@last_seen, last_seen), updated_at = NOW()
+        WHERE device_id = @device_id
+        """;
+
+    /// <summary>Return jumlah baris ter-update — 0 berarti device belum pernah kirim telemetry.</summary>
+    public async Task<int> UpdateStatusAsync(
+        string deviceId, string status, DateTimeOffset? lastSeen, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var parameters = new { device_id = deviceId, status, last_seen = lastSeen };
+        return await connection.ExecuteAsync(new CommandDefinition(UpdateStatusSql, parameters, cancellationToken: cancellationToken));
+    }
+
+    // Backstop sweep (docs/DATABASE_SCHEMA.md §"Deteksi online/offline"): device yang masih
+    // 'online' tapi last_seen sudah lewat threshold ditandai 'offline'. Hanya menyentuh status
+    // 'online' -- device yang sudah 'offline'/'unknown' tidak disentuh ulang tiap tick.
+    private const string MarkOfflineStaleSql = """
+        UPDATE device_current_state
+        SET status = 'offline', updated_at = NOW()
+        WHERE status = 'online' AND last_seen < @cutoff
+        """;
+
+    /// <summary>Return jumlah device yang ditandai offline pada scan ini.</summary>
+    public async Task<int> MarkOfflineStaleAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        return await connection.ExecuteAsync(new CommandDefinition(MarkOfflineStaleSql, new { cutoff }, cancellationToken: cancellationToken));
     }
 }

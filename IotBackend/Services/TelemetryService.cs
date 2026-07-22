@@ -21,6 +21,9 @@ public sealed class TelemetryService
     // Format timestamp firmware saat ini (belum ISO 8601, belum ada timezone).
     private const string DeviceTimestampFormat = "yyyy-MM-dd HH:mm:ss";
 
+    // Firmware kirim waktu lokal WIB tanpa offset (CLAUDE.md §9) -- dipakai untuk konversi ke UTC.
+    private static readonly TimeSpan DeviceTimeZoneOffset = TimeSpan.FromHours(7);
+
     private readonly TelemetryRepository _telemetryRepository;
     private readonly DeviceStateRepository _deviceStateRepository;
     private readonly DeviceRepository _deviceRepository;
@@ -71,7 +74,8 @@ public sealed class TelemetryService
             Topic = topic,
             VoltageA = payload.VoltageA,
             VoltageB = payload.VoltageB,
-            FrequencyA = payload.FreqA,
+            CurrentB = payload.CurrentB,
+            PowerB = payload.PowerB,
             FrequencyB = payload.FreqB,
             DeviceTimestamp = deviceTimestamp,
             RawPayload = rawPayload
@@ -84,7 +88,8 @@ public sealed class TelemetryService
             Status = "online", // device sedang mengirim data; deteksi abnormal (threshold) menyusul
             VoltageA = payload.VoltageA,
             VoltageB = payload.VoltageB,
-            FrequencyA = payload.FreqA,
+            CurrentB = payload.CurrentB,
+            PowerB = payload.PowerB,
             FrequencyB = payload.FreqB,
             LastSeen = receivedAt
         };
@@ -92,11 +97,13 @@ public sealed class TelemetryService
 
         // Auto-register ke tabel devices (master data) supaya GET /api/devices tidak kosong
         // begitu ada device baru mengirim telemetry. name/location tetap NULL (data manual).
-        await _deviceRepository.UpsertAsync(deviceId, state.Status, cancellationToken);
+        // status TIDAK ditulis di sini -- device_current_state.status di atas satu-satunya
+        // sumber kebenaran (docs/DATABASE_SCHEMA.md "Single writer buat status").
+        await _deviceRepository.EnsureRegisteredAsync(deviceId, cancellationToken);
 
         _logger.LogInformation(
-            "Telemetry {DeviceId} tersimpan (Va={Va} Vb={Vb} Fa={Fa} Fb={Fb}).",
-            deviceId, payload.VoltageA, payload.VoltageB, payload.FreqA, payload.FreqB);
+            "Telemetry {DeviceId} tersimpan (Va={Va} Vb={Vb} Ib={Ib} Pb={Pb} Fb={Fb}).",
+            deviceId, payload.VoltageA, payload.VoltageB, payload.CurrentB, payload.PowerB, payload.FreqB);
     }
 
     public async Task<List<TelemetryHistoryResponse>> GetHistoryAsync(
@@ -114,7 +121,8 @@ public sealed class TelemetryService
             DeviceId = r.DeviceId,
             VoltageA = r.VoltageA,
             VoltageB = r.VoltageB,
-            FrequencyA = r.FrequencyA,
+            CurrentB = r.CurrentB,
+            PowerB = r.PowerB,
             FrequencyB = r.FrequencyB,
             DeviceTimestamp = r.DeviceTimestamp,
             ReceivedAt = r.ReceivedAt
@@ -122,9 +130,10 @@ public sealed class TelemetryService
     }
 
     /// <summary>
-    /// Parse timestamp firmware. Firmware saat ini kirim waktu tanpa timezone; sampai firmware
-    /// mengirim ISO 8601 ber-timezone, nilai naive diperlakukan sebagai UTC agar diterima kolom
-    /// timestamptz. Gagal parse -> null (received_at tetap jadi acuan urutan yang andal).
+    /// Parse timestamp firmware. Firmware saat ini kirim waktu lokal WIB tanpa offset; sampai
+    /// firmware mengirim ISO 8601 ber-timezone, nilai naive dikonversi eksplisit ke UTC di sini
+    /// (bukan ditag Utc langsung -- itu bug -7 jam lama, CLAUDE.md §9). Gagal parse -> null
+    /// (received_at tetap jadi acuan urutan yang andal).
     /// </summary>
     private static DateTime? ParseDeviceTimestamp(string? raw)
     {
@@ -134,9 +143,9 @@ public sealed class TelemetryService
         }
 
         if (DateTime.TryParseExact(raw, DeviceTimestampFormat, CultureInfo.InvariantCulture,
-                DateTimeStyles.None, out var parsed))
+                DateTimeStyles.None, out var parsedLocal))
         {
-            return DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+            return DateTime.SpecifyKind(parsedLocal - DeviceTimeZoneOffset, DateTimeKind.Utc);
         }
 
         return null;

@@ -1,6 +1,5 @@
 namespace IotBackend.Contracts;
 
-/// <summary>Response untuk <c>GET /api/devices/{deviceId}/state</c>.</summary>
 public sealed class DeviceStateResponse
 {
     public required string DeviceId { get; init; }

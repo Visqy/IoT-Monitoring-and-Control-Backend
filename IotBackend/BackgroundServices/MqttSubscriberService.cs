@@ -6,14 +6,6 @@ using MQTTnet;
 
 namespace IotBackend.BackgroundServices;
 
-/// <summary>
-/// Hosted service (singleton) yang: connect -> subscribe -> parse topic -> deserialize ->
-/// panggil Service yang sesuai lewat scope baru per pesan (CLAUDE.md §4). Tidak inject
-/// service scoped langsung ke constructor — pakai IServiceScopeFactory.
-///
-/// Subscribe ke telemetry (<c>+/pzem</c>), konfirmasi relay (<c>+/relay/state</c>), dan status
-/// online/offline (<c>+/status</c>, LWT — lihat docs/DATABASE_SCHEMA.md §"Deteksi online/offline").
-/// </summary>
 public sealed class MqttSubscriberService : BackgroundService
 {
     private readonly MqttClientService _mqtt;
@@ -35,13 +27,10 @@ public sealed class MqttSubscriberService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Daftarkan handler sekali sebelum loop (client instance-nya sama walau reconnect).
         _mqtt.OnApplicationMessage(HandleMessageAsync);
 
         var reconnectDelay = TimeSpan.FromSeconds(Math.Max(1, _options.ReconnectDelaySeconds));
 
-        // Loop supervisor: kalau koneksi belum ada/putus, connect + subscribe ulang. IMqttClient
-        // tidak auto-resubscribe setelah reconnect, jadi subscribe wajib diulang tiap connect baru.
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -78,6 +67,7 @@ public sealed class MqttSubscriberService : BackgroundService
         await _mqtt.SubscribeAsync(_options.TelemetryTopic, cancellationToken);
         await _mqtt.SubscribeAsync(_options.RelayStateTopic, cancellationToken);
         await _mqtt.SubscribeAsync(_options.StatusTopic, cancellationToken);
+        await _mqtt.SubscribeAsync(_options.RfidTopic, cancellationToken);
     }
 
     private async Task HandleMessageAsync(MqttApplicationMessageReceivedEventArgs e)
@@ -94,7 +84,6 @@ public sealed class MqttSubscriberService : BackgroundService
 
         try
         {
-            // Hosted service singleton tidak boleh inject service scoped langsung -> buat scope per pesan.
             using var scope = _scopeFactory.CreateScope();
 
             if (topic.EndsWith("/pzem", StringComparison.Ordinal))
@@ -112,6 +101,11 @@ public sealed class MqttSubscriberService : BackgroundService
                 var deviceService = scope.ServiceProvider.GetRequiredService<DeviceService>();
                 await deviceService.ProcessStatusMessageAsync(deviceId, payloadText);
             }
+            else if (topic.EndsWith("/rfid", StringComparison.Ordinal))
+            {
+                var rfidService = scope.ServiceProvider.GetRequiredService<RfidService>();
+                await rfidService.ProcessScanAsync(deviceId, payloadText);
+            }
             else
             {
                 _logger.LogWarning("Topic '{Topic}' tidak dikenali, pesan diabaikan.", topic);
@@ -119,12 +113,10 @@ public sealed class MqttSubscriberService : BackgroundService
         }
         catch (Exception ex)
         {
-            // Satu pesan buruk tidak boleh mematikan handler.
             _logger.LogError(ex, "Gagal memproses pesan MQTT dari topic {Topic}.", topic);
         }
     }
 
-    /// <summary>device_id = segmen pertama topic ("terminal1/pzem" -> "terminal1").</summary>
     private static string? ExtractDeviceId(string topic)
     {
         if (string.IsNullOrEmpty(topic))

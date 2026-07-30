@@ -7,13 +7,6 @@ using IotBackend.Repositories;
 
 namespace IotBackend.Services;
 
-/// <summary>
-/// Business rule command relay: generate command_id, kirim command lewat MQTT, dan proses
-/// konfirmasi <c>relay/state</c> yang datang belakangan (async, terpisah dari request HTTP).
-///
-/// PENTING (docs/MQTT_CONTRACT.md): status 'executed' HANYA boleh diset setelah menerima
-/// relay/state yang matching commandId-nya — bukan begitu publish MQTT sukses ('sent' ≠ 'executed').
-/// </summary>
 public sealed class RelayCommandService
 {
     private const string CommandSource = "dashboard";
@@ -31,17 +24,20 @@ public sealed class RelayCommandService
     private readonly RelayCommandRepository _relayCommandRepository;
     private readonly DeviceStateRepository _deviceStateRepository;
     private readonly MqttClientService _mqtt;
+    private readonly RealtimeBroadcaster _broadcaster;
     private readonly ILogger<RelayCommandService> _logger;
 
     public RelayCommandService(
         RelayCommandRepository relayCommandRepository,
         DeviceStateRepository deviceStateRepository,
         MqttClientService mqtt,
+        RealtimeBroadcaster broadcaster,
         ILogger<RelayCommandService> logger)
     {
         _relayCommandRepository = relayCommandRepository;
         _deviceStateRepository = deviceStateRepository;
         _mqtt = mqtt;
+        _broadcaster = broadcaster;
         _logger = logger;
     }
 
@@ -64,7 +60,7 @@ public sealed class RelayCommandService
         string status;
         try
         {
-            await _mqtt.PublishAsync($"{deviceId}/relay/set", payloadJson, cancellationToken);
+            await _mqtt.PublishAsync($"{deviceId}/relay/set", payloadJson, cancellationToken: cancellationToken);
             await _relayCommandRepository.MarkSentAsync(commandId, payloadJson, cancellationToken);
             status = "sent";
         }
@@ -106,7 +102,26 @@ public sealed class RelayCommandService
         };
     }
 
-    /// <summary>Dipanggil MqttSubscriberService saat pesan <c>{deviceId}/relay/state</c> masuk.</summary>
+    public async Task<List<RelayCommandHistoryItemResponse>> GetHistoryAsync(
+        string deviceId, int limit, CancellationToken cancellationToken = default)
+    {
+        var records = await _relayCommandRepository.GetHistoryAsync(deviceId, limit, cancellationToken);
+
+        return records.Select(r => new RelayCommandHistoryItemResponse
+        {
+            CommandId = r.CommandId,
+            DeviceId = r.DeviceId,
+            RequestedState = r.RequestedState,
+            ActualState = r.ActualState,
+            Source = r.Source,
+            Status = r.Status,
+            RequestedAt = r.RequestedAt,
+            SentAt = r.SentAt,
+            AcknowledgedAt = r.AcknowledgedAt,
+            ErrorMessage = r.ErrorMessage
+        }).ToList();
+    }
+
     public async Task ProcessRelayStateAsync(string deviceId, string rawPayload, CancellationToken cancellationToken = default)
     {
         Guid? commandId = null;
@@ -127,7 +142,6 @@ public sealed class RelayCommandService
         }
         catch (JsonException)
         {
-            // Fallback firmware lama: payload string sederhana "ON"/"OFF" tanpa JSON (docs/MQTT_CONTRACT.md).
             actualState = ParseMqttState(rawPayload);
         }
 
@@ -147,9 +161,6 @@ public sealed class RelayCommandService
         }
         else
         {
-            // commandId null = perubahan tak ter-tracking dari dashboard (RFID/boot) atau firmware
-            // lama (string polos, tanpa source). INSERT baris baru langsung 'executed' supaya tetap
-            // ada audit trail (docs/DATABASE_SCHEMA.md §"Kenapa command_id VARCHAR").
             var effectiveSource = source ?? "unknown";
             var syntheticCommandId = $"{effectiveSource}-{Guid.NewGuid():N}";
             var acknowledgedAt = ParseExecutedAt(executedAtRaw) ?? DateTimeOffset.UtcNow;
@@ -168,7 +179,33 @@ public sealed class RelayCommandService
             _logger.LogWarning(
                 "device_current_state untuk {DeviceId} belum ada (belum pernah kirim telemetry), relay_state tidak tersimpan.",
                 deviceId);
+            return;
         }
+
+        await BroadcastDeviceStateAsync(deviceId, cancellationToken);
+    }
+
+    private async Task BroadcastDeviceStateAsync(string deviceId, CancellationToken cancellationToken)
+    {
+        var state = await _deviceStateRepository.GetByDeviceIdAsync(deviceId, cancellationToken);
+        if (state is null)
+        {
+            return;
+        }
+
+        _broadcaster.Publish("device-state", new DeviceStateResponse
+        {
+            DeviceId = state.DeviceId,
+            Status = state.Status,
+            VoltageA = state.VoltageA,
+            VoltageB = state.VoltageB,
+            CurrentB = state.CurrentB,
+            PowerB = state.PowerB,
+            EnergyB = state.EnergyB,
+            FrequencyB = state.FrequencyB,
+            RelayState = state.RelayState,
+            LastSeen = state.LastSeen
+        });
     }
 
     private static string ToMqttState(bool state) => state ? "ON" : "OFF";
@@ -180,8 +217,6 @@ public sealed class RelayCommandService
         _ => null
     };
 
-    // .ToUniversalTime() wajib -- Npgsql cuma terima DateTimeOffset Offset=0 untuk kolom
-    // timestamptz, payload firmware kirim offset lokal (mis. +07:00) yang harus dinormalisasi dulu.
     private static DateTimeOffset? ParseExecutedAt(string? raw) =>
         !string.IsNullOrWhiteSpace(raw) && DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? parsed.ToUniversalTime()

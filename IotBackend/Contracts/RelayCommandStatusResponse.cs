@@ -1,6 +1,5 @@
 namespace IotBackend.Contracts;
 
-/// <summary>Response untuk <c>GET /api/commands/{commandId}</c>.</summary>
 public sealed class RelayCommandStatusResponse
 {
     public Guid CommandId { get; init; }

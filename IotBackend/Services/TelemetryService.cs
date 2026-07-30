@@ -1,16 +1,12 @@
 using System.Globalization;
 using System.Text.Json;
 using IotBackend.Contracts;
+using IotBackend.Infrastructure;
 using IotBackend.Models;
 using IotBackend.Repositories;
 
 namespace IotBackend.Services;
 
-/// <summary>
-/// Business rule telemetry: deserialize + validasi payload, normalisasi timestamp, tentukan
-/// status, lalu simpan ke history (<c>telemetry</c>) dan snapshot (<c>device_current_state</c>).
-/// Dipanggil oleh MqttSubscriberService lewat scope baru per pesan (CLAUDE.md §4).
-/// </summary>
 public sealed class TelemetryService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -18,26 +14,27 @@ public sealed class TelemetryService
         PropertyNameCaseInsensitive = true
     };
 
-    // Format timestamp firmware saat ini (belum ISO 8601, belum ada timezone).
     private const string DeviceTimestampFormat = "yyyy-MM-dd HH:mm:ss";
 
-    // Firmware kirim waktu lokal WIB tanpa offset (CLAUDE.md §9) -- dipakai untuk konversi ke UTC.
     private static readonly TimeSpan DeviceTimeZoneOffset = TimeSpan.FromHours(7);
 
     private readonly TelemetryRepository _telemetryRepository;
     private readonly DeviceStateRepository _deviceStateRepository;
     private readonly DeviceRepository _deviceRepository;
+    private readonly RealtimeBroadcaster _broadcaster;
     private readonly ILogger<TelemetryService> _logger;
 
     public TelemetryService(
         TelemetryRepository telemetryRepository,
         DeviceStateRepository deviceStateRepository,
         DeviceRepository deviceRepository,
+        RealtimeBroadcaster broadcaster,
         ILogger<TelemetryService> logger)
     {
         _telemetryRepository = telemetryRepository;
         _deviceStateRepository = deviceStateRepository;
         _deviceRepository = deviceRepository;
+        _broadcaster = broadcaster;
         _logger = logger;
     }
 
@@ -86,7 +83,7 @@ public sealed class TelemetryService
         var state = new DeviceCurrentState
         {
             DeviceId = deviceId,
-            Status = "online", // device sedang mengirim data; deteksi abnormal (threshold) menyusul
+            Status = "online",
             VoltageA = payload.VoltageA,
             VoltageB = payload.VoltageB,
             CurrentB = payload.CurrentB,
@@ -97,11 +94,9 @@ public sealed class TelemetryService
         };
         await _deviceStateRepository.UpsertFromTelemetryAsync(state, cancellationToken);
 
-        // Auto-register ke tabel devices (master data) supaya GET /api/devices tidak kosong
-        // begitu ada device baru mengirim telemetry. name/location tetap NULL (data manual).
-        // status TIDAK ditulis di sini -- device_current_state.status di atas satu-satunya
-        // sumber kebenaran (docs/DATABASE_SCHEMA.md "Single writer buat status").
         await _deviceRepository.EnsureRegisteredAsync(deviceId, cancellationToken);
+
+        await BroadcastDeviceStateAsync(deviceId, cancellationToken);
 
         _logger.LogInformation(
             "Telemetry {DeviceId} tersimpan (Va={Va} Vb={Vb} Ib={Ib} Pb={Pb} Eb={Eb} Fb={Fb}).",
@@ -132,12 +127,29 @@ public sealed class TelemetryService
         }).ToList();
     }
 
-    /// <summary>
-    /// Parse timestamp firmware. Firmware saat ini kirim waktu lokal WIB tanpa offset; sampai
-    /// firmware mengirim ISO 8601 ber-timezone, nilai naive dikonversi eksplisit ke UTC di sini
-    /// (bukan ditag Utc langsung -- itu bug -7 jam lama, CLAUDE.md §9). Gagal parse -> null
-    /// (received_at tetap jadi acuan urutan yang andal).
-    /// </summary>
+    private async Task BroadcastDeviceStateAsync(string deviceId, CancellationToken cancellationToken)
+    {
+        var state = await _deviceStateRepository.GetByDeviceIdAsync(deviceId, cancellationToken);
+        if (state is null)
+        {
+            return;
+        }
+
+        _broadcaster.Publish("device-state", new DeviceStateResponse
+        {
+            DeviceId = state.DeviceId,
+            Status = state.Status,
+            VoltageA = state.VoltageA,
+            VoltageB = state.VoltageB,
+            CurrentB = state.CurrentB,
+            PowerB = state.PowerB,
+            EnergyB = state.EnergyB,
+            FrequencyB = state.FrequencyB,
+            RelayState = state.RelayState,
+            LastSeen = state.LastSeen
+        });
+    }
+
     private static DateTime? ParseDeviceTimestamp(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))

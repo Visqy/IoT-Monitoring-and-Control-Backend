@@ -1,0 +1,52 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: IotBackend/Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - IotBackend/.env
+    environment:
+      # Override baris ConnectionStrings__Postgres dari .env supaya arah ke service
+      # "postgres" di bawah (nama service = hostname di jaringan docker-compose), bukan
+      # 127.0.0.1 (host lokal, tidak reachable dari dalam container). Hapus/comment blok
+      # "postgres" + baris ini kalau mau tetap pakai Supabase (biarkan .env yang menentukan).
+      ConnectionStrings__Postgres: >-
+        Host=postgres;Port=5432;Database=iot_monitoring;Username=iot_user;Password=${POSTGRES_PASSWORD:-iot_password};SSL Mode=Disable
+      # Tanpa ini, Program.cs default ke Production dan Scalar UI (/scalar/v1) tidak
+      # kepasang. Cocok buat compose lokal (testing) -- hapus/ganti "Production" kalau
+      # compose ini dipakai buat deployment beneran, bukan cuma tes lokal.
+      ASPNETCORE_ENVIRONMENT: Development
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Postgres lokal -- opsional. Kalau proyek ini pakai Supabase, hapus service ini dan
+  # override environment.ConnectionStrings__Postgres di atas juga dihapus (biar .env yang pakai).
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: iot_monitoring
+      POSTGRES_USER: iot_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-iot_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iot_user -d iot_monitoring"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

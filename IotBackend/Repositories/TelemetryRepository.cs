@@ -4,10 +4,6 @@ using Npgsql;
 
 namespace IotBackend.Repositories;
 
-/// <summary>
-/// Akses tabel <c>telemetry</c> (raw history). SQL parameterized manual via Npgsql,
-/// mapping hasil query pakai Dapper (lihat CLAUDE.md §2/§3) — tanpa EF Core, tanpa business logic.
-/// </summary>
 public sealed class TelemetryRepository
 {
     private readonly NpgsqlDataSource _dataSource;
@@ -45,8 +41,6 @@ public sealed class TelemetryRepository
         await connection.ExecuteAsync(new CommandDefinition(InsertSql, parameters, cancellationToken: cancellationToken));
     }
 
-    // Urut & filter pakai received_at, bukan device_timestamp — device_timestamp bisa
-    // null/tidak akurat kalau ESP belum NTP sync (lihat docs/MQTT_CONTRACT.md).
     private const string GetHistorySql = """
         SELECT id, device_id, topic, voltage_a, voltage_b, current_b, power_b, energy_b, frequency_b, device_timestamp, received_at
         FROM telemetry
@@ -66,8 +60,6 @@ public sealed class TelemetryRepository
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        // .ToUniversalTime() wajib -- Npgsql cuma terima DateTimeOffset Offset=0 untuk kolom
-        // timestamptz; caller (query string) bisa saja kirim offset non-UTC.
         var parameters = new { device_id = deviceId, from = from?.ToUniversalTime(), to = to?.ToUniversalTime(), limit };
         var rows = await connection.QueryAsync<TelemetryHistoryRecord>(
             new CommandDefinition(GetHistorySql, parameters, cancellationToken: cancellationToken));

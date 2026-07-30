@@ -1,6 +1,5 @@
 namespace IotBackend.Models;
 
-/// <summary>Representasi satu baris hasil query riwayat dari tabel <c>telemetry</c>.</summary>
 public sealed class TelemetryHistoryRecord
 {
     public long Id { get; init; }

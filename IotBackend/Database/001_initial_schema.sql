@@ -82,3 +82,35 @@ CREATE TABLE IF NOT EXISTS relay_commands (
 
 CREATE INDEX IF NOT EXISTS idx_relay_commands_device_requested
 ON relay_commands (device_id, requested_at DESC);
+
+-- Whitelist kartu RFID, global (bukan per-device) -- dikelola dashboard. Kartu bersifat
+-- toggle (satu peran, bukan ON/OFF terpisah); "keberadaan di sini & is_active" itulah
+-- satu-satunya yang menentukan boleh/tidak. Lihat docs/RFID_ACCESS_CONTROL_PLAN.md.
+CREATE TABLE IF NOT EXISTS rfid_cards (
+    uid VARCHAR PRIMARY KEY,
+
+    label     TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Log mentah tiap scan kartu (termasuk yang ditolak) -- append-only, pola sama seperti
+-- telemetry. Kartu ditolak tidak pernah masuk relay_commands (tidak ada perubahan relay),
+-- jadi tabel ini satu-satunya jejak buat kejadian itu.
+CREATE TABLE IF NOT EXISTS rfid_events (
+    id        BIGSERIAL PRIMARY KEY,
+    device_id VARCHAR NOT NULL,
+    uid       TEXT NOT NULL,
+
+    recognized BOOLEAN NOT NULL,
+
+    scanned_at  TIMESTAMPTZ,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    raw_payload JSONB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rfid_events_received
+ON rfid_events (received_at DESC);

@@ -4,7 +4,6 @@ using Npgsql;
 
 namespace IotBackend.Repositories;
 
-/// <summary>Akses tabel <c>relay_commands</c> (tracking command relay + konfirmasi eksekusi).</summary>
 public sealed class RelayCommandRepository
 {
     private readonly NpgsqlDataSource _dataSource;
@@ -63,10 +62,6 @@ public sealed class RelayCommandRepository
         await connection.ExecuteAsync(new CommandDefinition(MarkFailedSql, parameters, cancellationToken: cancellationToken));
     }
 
-    // Perubahan relay device-initiated (RFID/boot, commandId null di payload MQTT) -- langsung
-    // INSERT baris baru 'executed', bukan UPDATE (tidak ada command yang sudah di-tracking).
-    // requested_state = actual_state sengaja sama-sama diisi @actual_state (docs/DATABASE_SCHEMA.md
-    // §"Kenapa command_id VARCHAR": tidak ada fase "diminta" terpisah untuk event ini).
     private const string InsertExecutedSql = """
         INSERT INTO relay_commands
             (command_id, device_id, requested_state, actual_state, source, status, requested_at, acknowledged_at, raw_payload)
@@ -92,16 +87,11 @@ public sealed class RelayCommandRepository
 
         await connection.ExecuteAsync(new CommandDefinition(InsertExecutedSql, parameters, cancellationToken: cancellationToken));
     }
-
-    // status <> 'executed' -> konfirmasi pertama yang menang; relay/state duplikat/telat tidak
-    // menimpa hasil yang sudah final (lihat state machine di docs/DATABASE_SCHEMA.md).
     private const string MarkExecutedSql = """
         UPDATE relay_commands
         SET status = 'executed', actual_state = @actual_state, acknowledged_at = NOW()
         WHERE command_id = @command_id AND status <> 'executed'
         """;
-
-    /// <summary>Return jumlah baris ter-update — 0 berarti commandId tidak ditemukan.</summary>
     public async Task<int> MarkExecutedAsync(Guid commandId, bool actualState, CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -109,9 +99,6 @@ public sealed class RelayCommandRepository
         var parameters = new { command_id = commandId.ToString(), actual_state = actualState };
         return await connection.ExecuteAsync(new CommandDefinition(MarkExecutedSql, parameters, cancellationToken: cancellationToken));
     }
-
-    // Tandai command yang masih 'sent' tapi tak kunjung dikonfirmasi relay/state melewati batas
-    // waktu. Hanya menyentuh status 'sent' — 'executed'/'failed' yang sudah final tidak diubah.
     private const string MarkTimedOutStaleSql = """
         UPDATE relay_commands
         SET status = 'timeout',
@@ -119,7 +106,6 @@ public sealed class RelayCommandRepository
         WHERE status = 'sent' AND sent_at < @cutoff
         """;
 
-    /// <summary>Return jumlah command yang ditandai timeout pada scan ini.</summary>
     public async Task<int> MarkTimedOutStaleAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -134,9 +120,6 @@ public sealed class RelayCommandRepository
         WHERE command_id = @command_id
         """;
 
-    // command_id disimpan VARCHAR di DB (docs/DATABASE_SCHEMA.md) tapi API publik tetap Guid —
-    // query ke row-type privat ini dulu (command_id apa adanya sebagai string), baru di-parse
-    // manual ke RelayCommandRecord.CommandId supaya tidak bergantung ke konversi implisit Dapper.
     private sealed class RelayCommandRow
     {
         public required string CommandId { get; init; }
@@ -176,5 +159,26 @@ public sealed class RelayCommandRepository
             AcknowledgedAt = row.AcknowledgedAt,
             ErrorMessage = row.ErrorMessage
         };
+    }
+
+    private const string GetHistorySql = """
+        SELECT command_id, device_id, requested_state, actual_state, source, status,
+               requested_at, sent_at, acknowledged_at, error_message
+        FROM relay_commands
+        WHERE device_id = @device_id
+        ORDER BY requested_at DESC
+        LIMIT @limit
+        """;
+
+    public async Task<List<RelayCommandHistoryRecord>> GetHistoryAsync(
+        string deviceId, int limit, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var parameters = new { device_id = deviceId, limit };
+        var rows = await connection.QueryAsync<RelayCommandHistoryRecord>(
+            new CommandDefinition(GetHistorySql, parameters, cancellationToken: cancellationToken));
+
+        return rows.AsList();
     }
 }

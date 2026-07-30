@@ -1,11 +1,13 @@
 using System.Text.RegularExpressions;
 using IotBackend.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace IotBackend.Controllers;
 
 [ApiController]
 [Route("api/devices")]
+[Authorize]
 public sealed partial class DevicesController : ControllerBase
 {
     private readonly DeviceService _deviceService;

@@ -1,9 +1,5 @@
 namespace IotBackend.Models;
 
-/// <summary>
-/// Representasi satu baris tabel <c>device_current_state</c> untuk keperluan baca
-/// (beda dari <see cref="DeviceCurrentState"/> yang khusus dipakai untuk upsert dari telemetry).
-/// </summary>
 public sealed class DeviceCurrentStateRecord
 {
     public required string DeviceId { get; init; }

@@ -1,9 +1,5 @@
 namespace IotBackend.Options;
 
-/// <summary>
-/// Binding untuk section "Mqtt" di konfigurasi. Nilai non-rahasia (Host, Port, topic)
-/// boleh di appsettings.json; Username &amp; Password WAJIB lewat User Secrets / env var.
-/// </summary>
 public sealed class MqttOptions
 {
     public const string SectionName = "Mqtt";
@@ -17,7 +13,8 @@ public sealed class MqttOptions
     public string TelemetryTopic { get; init; } = "+/pzem";
     public string StatusTopic { get; init; } = "+/status";
     public string RelayStateTopic { get; init; } = "+/relay/state";
+    public string RfidTopic { get; init; } = "+/rfid";
+    public string RfidCardsTopic { get; init; } = "rfid/cards";
 
-    /// <summary>Jeda antar percobaan (re)connect saat koneksi putus/belum tersambung.</summary>
     public int ReconnectDelaySeconds { get; init; } = 5;
 }

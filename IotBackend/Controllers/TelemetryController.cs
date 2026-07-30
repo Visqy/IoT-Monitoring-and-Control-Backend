@@ -1,11 +1,13 @@
 using System.Text.RegularExpressions;
 using IotBackend.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace IotBackend.Controllers;
 
 [ApiController]
 [Route("api/devices/{deviceId}/telemetry")]
+[Authorize]
 public sealed partial class TelemetryController : ControllerBase
 {
     private const int DefaultLimit = 100;

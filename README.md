@@ -98,12 +98,20 @@ di `/scalar/v1` saat development.
 
 | Method | Route | Fungsi |
 |---|---|---|
-| GET | `/api/health` | Health check (per-dependency) |
-| GET | `/api/devices` | List device terdaftar |
-| GET | `/api/devices/{deviceId}/state` | Kondisi terbaru device |
-| GET | `/api/devices/{deviceId}/telemetry` | Riwayat telemetry |
-| POST | `/api/devices/{deviceId}/relay` | Kirim command relay (202 Accepted) |
-| GET | `/api/commands/{commandId}` | Status command relay |
+| GET | `/api/health` | Health check (per-dependency) — publik, tidak butuh token |
+| POST | `/api/auth/login` | Login (satu akun bersama) — publik, return JWT |
+| GET | `/api/devices` | List device terdaftar — butuh `Authorization: Bearer <token>` |
+| GET | `/api/devices/{deviceId}/state` | Kondisi terbaru device — butuh token |
+| GET | `/api/devices/{deviceId}/telemetry` | Riwayat telemetry — butuh token |
+| POST | `/api/devices/{deviceId}/relay` | Kirim command relay (202 Accepted) — butuh token |
+| GET | `/api/commands/{commandId}` | Status command relay — butuh token |
+| GET | `/api/devices/{deviceId}/relay-commands` | Riwayat perubahan relay per device (dashboard + RFID/boot) — butuh token |
+| GET | `/api/rfid-cards` | Daftar whitelist kartu RFID (global) — butuh token |
+| POST | `/api/rfid-cards` | Tambah kartu ke whitelist — butuh token |
+| PATCH | `/api/rfid-cards/{uid}` | Aktif/nonaktifkan atau ubah label kartu — butuh token |
+| DELETE | `/api/rfid-cards/{uid}` | Hapus kartu dari whitelist — butuh token |
+| GET | `/api/rfid-events` | Riwayat scan kartu (termasuk yang ditolak) — butuh token |
+| GET | `/api/stream` | Push realtime (SSE, event `device-state` & `rfid-scan`) — butuh token |
 
 ## Catatan
 

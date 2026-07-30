@@ -1,6 +1,5 @@
 namespace IotBackend.Contracts;
 
-/// <summary>Response item untuk <c>GET /api/devices/{deviceId}/telemetry</c>.</summary>
 public sealed class TelemetryHistoryResponse
 {
     public long Id { get; init; }

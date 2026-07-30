@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/.env
+**/*.user
+.git/
+docs/
+.claude/
+CLAUDE.md
+AGENTS.md
+add_user_secrets_commands.txt

@@ -1,23 +1,25 @@
 using IotBackend.Contracts;
+using IotBackend.Infrastructure;
 using IotBackend.Repositories;
 
 namespace IotBackend.Services;
 
-/// <summary>
-/// Business logic seputar identitas &amp; kondisi terkini device (tabel <c>devices</c> dan
-/// <c>device_current_state</c>). Dipakai oleh DevicesController.
-/// </summary>
 public sealed class DeviceService
 {
     private readonly DeviceRepository _deviceRepository;
     private readonly DeviceStateRepository _deviceStateRepository;
+    private readonly RealtimeBroadcaster _broadcaster;
     private readonly ILogger<DeviceService> _logger;
 
     public DeviceService(
-        DeviceRepository deviceRepository, DeviceStateRepository deviceStateRepository, ILogger<DeviceService> logger)
+        DeviceRepository deviceRepository,
+        DeviceStateRepository deviceStateRepository,
+        RealtimeBroadcaster broadcaster,
+        ILogger<DeviceService> logger)
     {
         _deviceRepository = deviceRepository;
         _deviceStateRepository = deviceStateRepository;
+        _broadcaster = broadcaster;
         _logger = logger;
     }
 
@@ -35,7 +37,6 @@ public sealed class DeviceService
         }).ToList();
     }
 
-    /// <summary>Null kalau deviceId belum pernah mengirim data sama sekali (controller -> 404).</summary>
     public async Task<DeviceStateResponse?> GetDeviceStateAsync(string deviceId, CancellationToken cancellationToken = default)
     {
         var state = await _deviceStateRepository.GetByDeviceIdAsync(deviceId, cancellationToken);
@@ -59,12 +60,6 @@ public sealed class DeviceService
         };
     }
 
-    /// <summary>
-    /// Dipanggil MqttSubscriberService saat pesan <c>{deviceId}/status</c> (LWT) masuk. Payload
-    /// plain string (bukan JSON) <c>"online"</c>/<c>"offline"</c>, retained -- lihat
-    /// docs/MQTT_CONTRACT.md §"Status device". <c>last_seen</c> cuma dibump untuk "online"
-    /// (device benar-benar baru connect) -- "offline" itu LWT dari broker, bukan aktivitas device.
-    /// </summary>
     public async Task ProcessStatusMessageAsync(string deviceId, string rawPayload, CancellationToken cancellationToken = default)
     {
         var status = rawPayload.Trim().ToLowerInvariant();
@@ -81,6 +76,13 @@ public sealed class DeviceService
             _logger.LogWarning(
                 "device_current_state untuk {DeviceId} belum ada (belum pernah kirim telemetry), status '{Status}' tidak tersimpan.",
                 deviceId, status);
+            return;
+        }
+
+        var state = await GetDeviceStateAsync(deviceId, cancellationToken);
+        if (state is not null)
+        {
+            _broadcaster.Publish("device-state", state);
         }
     }
 }

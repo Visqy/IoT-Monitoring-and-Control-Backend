@@ -2,13 +2,6 @@ using Npgsql;
 
 namespace IotBackend.Infrastructure;
 
-/// <summary>
-/// Menjalankan skrip schema (Database/001_initial_schema.sql) saat startup. Skrip idempotent
-/// (CREATE TABLE IF NOT EXISTS) jadi aman dieksekusi tiap kali app dinyalakan.
-///
-/// Kegagalan DB TIDAK mematikan aplikasi — di-log saja, dan /api/health akan melaporkan
-/// postgres=down. Ini memudahkan pengembangan saat DB belum sempat dinyalakan.
-/// </summary>
 public sealed class DatabaseInitializer
 {
     private readonly NpgsqlDataSource _dataSource;

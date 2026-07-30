@@ -1,6 +1,5 @@
 namespace IotBackend.Models;
 
-/// <summary>Representasi satu baris tabel <c>devices</c> (master data).</summary>
 public sealed class DeviceRecord
 {
     public required string DeviceId { get; init; }

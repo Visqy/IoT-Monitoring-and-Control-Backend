@@ -4,15 +4,6 @@ using MQTTnet;
 
 namespace IotBackend.Infrastructure;
 
-/// <summary>
-/// Membungkus koneksi tunggal ke HiveMQ Cloud (TLS). Didaftarkan sebagai SINGLETON
-/// (lihat CLAUDE.md §4) — satu koneksi terkelola untuk publish &amp; subscribe.
-///
-/// Fase 1: hanya connect (TLS + credentials). Subscribe / publish menyusul di Fase 2+.
-///
-/// Catatan MQTTnet 5.x: API berbeda dari 4.x — factory sekarang <c>MqttClientFactory</c>
-/// dan TLS dikonfigurasi lewat <c>WithTlsOptions(...)</c>, bukan <c>WithTls()</c>.
-/// </summary>
 public sealed class MqttClientService : IAsyncDisposable
 {
     private readonly MqttOptions _options;
@@ -39,10 +30,6 @@ public sealed class MqttClientService : IAsyncDisposable
 
     public bool IsConnected => _client.IsConnected;
 
-    /// <summary>
-    /// Connect ke broker kalau belum tersambung. Idempotent. Melempar exception kalau gagal
-    /// (pemanggil yang memutuskan apakah itu fatal — lihat MqttConnectionHostedService).
-    /// </summary>
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
         if (_client.IsConnected)
@@ -59,15 +46,11 @@ public sealed class MqttClientService : IAsyncDisposable
         _logger.LogInformation("Hasil connect MQTT: {ResultCode}", result.ResultCode);
     }
 
-    /// <summary>
-    /// Daftarkan handler pesan masuk. Dipanggil sekali oleh subscriber sebelum subscribe.
-    /// </summary>
     public void OnApplicationMessage(Func<MqttApplicationMessageReceivedEventArgs, Task> handler)
     {
         _client.ApplicationMessageReceivedAsync += handler;
     }
 
-    /// <summary>Subscribe ke satu topic filter (mendukung wildcard <c>+</c>).</summary>
     public async Task SubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
     {
         var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
@@ -78,12 +61,12 @@ public sealed class MqttClientService : IAsyncDisposable
         _logger.LogInformation("Subscribed ke topic MQTT {Topic}", topicFilter);
     }
 
-    /// <summary>Publish payload (string) ke satu topic, QoS default (at-most-once).</summary>
-    public async Task PublishAsync(string topic, string payload, CancellationToken cancellationToken = default)
+    public async Task PublishAsync(string topic, string payload, bool retain = false, CancellationToken cancellationToken = default)
     {
         var message = new MqttApplicationMessageBuilder()
             .WithTopic(topic)
             .WithPayload(payload)
+            .WithRetainFlag(retain)
             .Build();
 
         await _client.PublishAsync(message, cancellationToken);

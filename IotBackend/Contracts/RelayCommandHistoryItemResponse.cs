@@ -1,8 +1,8 @@
-namespace IotBackend.Models;
+namespace IotBackend.Contracts;
 
-public sealed class RelayCommandRecord
+public sealed class RelayCommandHistoryItemResponse
 {
-    public Guid CommandId { get; init; }
+    public required string CommandId { get; init; }
     public required string DeviceId { get; init; }
 
     public bool RequestedState { get; init; }

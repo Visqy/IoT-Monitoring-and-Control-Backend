@@ -1,3 +1,4 @@
+using Dapper;
 using IotBackend.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
@@ -22,7 +23,7 @@ public sealed class HealthController : ControllerBase
   [HttpGet]
   public async Task<IActionResult> Get(CancellationToken cancellationToken)
   {
-    var postgresOk = await CheckPostgresAsync(cancellationToken);
+    var (postgresOk, activeConnections, maxConnections) = await CheckPostgresAsync(cancellationToken);
     var mqttOk = _mqtt.IsConnected;
     var allOk = postgresOk && mqttOk;
 
@@ -35,7 +36,10 @@ public sealed class HealthController : ControllerBase
       {
         postgres = postgresOk ? "up" : "down",
         mqtt = mqttOk ? "up" : "down"
-      }
+      },
+      postgresPool = postgresOk
+        ? new { activeConnections, maxConnections }
+        : null
     };
 
     return allOk
@@ -43,18 +47,27 @@ public sealed class HealthController : ControllerBase
       : StatusCode(StatusCodes.Status503ServiceUnavailable, payload);
   }
 
-  private async Task<bool> CheckPostgresAsync(CancellationToken cancellationToken)
+  private async Task<(bool Ok, int? ActiveConnections, int? MaxConnections)> CheckPostgresAsync(
+    CancellationToken cancellationToken)
   {
     try
     {
-      await using var command = _dataSource.CreateCommand("SELECT 1");
-      await command.ExecuteScalarAsync(cancellationToken);
-      return true;
+      await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+
+      var activeConnections = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+        "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()",
+        cancellationToken: cancellationToken));
+
+      var maxConnections = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+        "SELECT setting::int FROM pg_settings WHERE name = 'max_connections'",
+        cancellationToken: cancellationToken));
+
+      return (true, activeConnections, maxConnections);
     }
     catch (Exception ex)
     {
       _logger.LogWarning(ex, "Health check Postgres gagal.");
-      return false;
+      return (false, null, null);
     }
   }
 }

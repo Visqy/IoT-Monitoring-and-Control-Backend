@@ -4,13 +4,6 @@ using Microsoft.Extensions.Options;
 
 namespace IotBackend.BackgroundServices;
 
-/// <summary>
-/// Memindai <c>device_current_state</c> secara berkala dan menandai device yang statusnya masih
-/// <c>online</c> tapi <c>last_seen</c> sudah melewati batas waktu menjadi <c>offline</c>.
-/// Backstop untuk LWT <c>+/status</c> (lihat docs/DATABASE_SCHEMA.md §"Deteksi online/offline")
-/// — menangkap kasus device masih connect TCP tapi macet/berhenti kirim data. Repository scoped
-/// diresolve lewat scope per-tick (hosted service ini singleton, CLAUDE.md §4).
-/// </summary>
 public sealed class DeviceOfflineSweepService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;

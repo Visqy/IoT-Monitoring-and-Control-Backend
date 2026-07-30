@@ -15,3 +15,4 @@ add_user_secrets_commands.txt
 CLAUDE.md
 AGENTS.md
 docs/
+.claude/

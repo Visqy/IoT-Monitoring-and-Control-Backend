@@ -6,7 +6,6 @@ public sealed class TelemetryHistoryRecord
     public required string DeviceId { get; init; }
     public required string Topic { get; init; }
 
-    public double? VoltageA { get; init; }
     public double? VoltageB { get; init; }
     public double? CurrentB { get; init; }
     public double? PowerB { get; init; }

@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS telemetry (
     device_id VARCHAR NOT NULL,
     topic     TEXT NOT NULL,
 
-    voltage_a   DOUBLE PRECISION,
     voltage_b   DOUBLE PRECISION,
     current_b   DOUBLE PRECISION,
     power_b     DOUBLE PRECISION,
@@ -45,7 +44,6 @@ CREATE TABLE IF NOT EXISTS device_current_state (
     device_id VARCHAR PRIMARY KEY,
 
     status      TEXT NOT NULL DEFAULT 'unknown',
-    voltage_a   DOUBLE PRECISION,
     voltage_b   DOUBLE PRECISION,
     current_b   DOUBLE PRECISION,
     power_b     DOUBLE PRECISION,

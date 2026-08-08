@@ -15,9 +15,9 @@ public sealed class TelemetryRepository
 
     private const string InsertSql = """
         INSERT INTO telemetry
-            (device_id, topic, voltage_a, voltage_b, current_b, power_b, energy_b, frequency_b, device_timestamp, raw_payload)
+            (device_id, topic, voltage_b, current_b, power_b, energy_b, frequency_b, device_timestamp, raw_payload)
         VALUES
-            (@device_id, @topic, @voltage_a, @voltage_b, @current_b, @power_b, @energy_b, @frequency_b, @device_timestamp, @raw_payload::jsonb)
+            (@device_id, @topic, @voltage_b, @current_b, @power_b, @energy_b, @frequency_b, @device_timestamp, @raw_payload::jsonb)
         """;
 
     public async Task InsertAsync(TelemetryRecord record, CancellationToken cancellationToken = default)
@@ -28,7 +28,6 @@ public sealed class TelemetryRepository
         {
             device_id = record.DeviceId,
             topic = record.Topic,
-            voltage_a = record.VoltageA,
             voltage_b = record.VoltageB,
             current_b = record.CurrentB,
             power_b = record.PowerB,
@@ -42,7 +41,7 @@ public sealed class TelemetryRepository
     }
 
     private const string GetHistorySql = """
-        SELECT id, device_id, topic, voltage_a, voltage_b, current_b, power_b, energy_b, frequency_b, device_timestamp, received_at
+        SELECT id, device_id, topic, voltage_b, current_b, power_b, energy_b, frequency_b, device_timestamp, received_at
         FROM telemetry
         WHERE device_id = @device_id
           AND (@from IS NULL OR received_at >= @from)

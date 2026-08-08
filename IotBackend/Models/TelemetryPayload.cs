@@ -2,7 +2,6 @@ namespace IotBackend.Models;
 
 public sealed class TelemetryPayload
 {
-    public double? VoltageA { get; init; }
     public double? VoltageB { get; init; }
     public double? CurrentB { get; init; }
     public double? PowerB { get; init; }

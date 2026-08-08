@@ -15,12 +15,11 @@ public sealed class DeviceStateRepository
 
     private const string UpsertSql = """
         INSERT INTO device_current_state
-            (device_id, status, voltage_a, voltage_b, current_b, power_b, energy_b, frequency_b, last_seen, updated_at)
+            (device_id, status, voltage_b, current_b, power_b, energy_b, frequency_b, last_seen, updated_at)
         VALUES
-            (@device_id, @status, @voltage_a, @voltage_b, @current_b, @power_b, @energy_b, @frequency_b, @last_seen, NOW())
+            (@device_id, @status, @voltage_b, @current_b, @power_b, @energy_b, @frequency_b, @last_seen, NOW())
         ON CONFLICT (device_id) DO UPDATE SET
             status      = EXCLUDED.status,
-            voltage_a   = EXCLUDED.voltage_a,
             voltage_b   = EXCLUDED.voltage_b,
             current_b   = EXCLUDED.current_b,
             power_b     = EXCLUDED.power_b,
@@ -38,7 +37,6 @@ public sealed class DeviceStateRepository
         {
             device_id = state.DeviceId,
             status = state.Status,
-            voltage_a = state.VoltageA,
             voltage_b = state.VoltageB,
             current_b = state.CurrentB,
             power_b = state.PowerB,
@@ -51,7 +49,7 @@ public sealed class DeviceStateRepository
     }
 
     private const string GetByDeviceIdSql = """
-        SELECT device_id, status, voltage_a, voltage_b, current_b, power_b, energy_b, frequency_b, relay_state, last_seen
+        SELECT device_id, status, voltage_b, current_b, power_b, energy_b, frequency_b, relay_state, last_seen
         FROM device_current_state
         WHERE device_id = @device_id
         """;

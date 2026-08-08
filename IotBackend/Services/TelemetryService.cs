@@ -69,7 +69,6 @@ public sealed class TelemetryService
         {
             DeviceId = deviceId,
             Topic = topic,
-            VoltageA = payload.VoltageA,
             VoltageB = payload.VoltageB,
             CurrentB = payload.CurrentB,
             PowerB = payload.PowerB,
@@ -84,7 +83,6 @@ public sealed class TelemetryService
         {
             DeviceId = deviceId,
             Status = "online",
-            VoltageA = payload.VoltageA,
             VoltageB = payload.VoltageB,
             CurrentB = payload.CurrentB,
             PowerB = payload.PowerB,
@@ -99,8 +97,8 @@ public sealed class TelemetryService
         await BroadcastDeviceStateAsync(deviceId, cancellationToken);
 
         _logger.LogInformation(
-            "Telemetry {DeviceId} tersimpan (Va={Va} Vb={Vb} Ib={Ib} Pb={Pb} Eb={Eb} Fb={Fb}).",
-            deviceId, payload.VoltageA, payload.VoltageB, payload.CurrentB, payload.PowerB, payload.EnergyB, payload.FreqB);
+            "Telemetry {DeviceId} tersimpan (Vb={Vb} Ib={Ib} Pb={Pb} Eb={Eb} Fb={Fb}).",
+            deviceId, payload.VoltageB, payload.CurrentB, payload.PowerB, payload.EnergyB, payload.FreqB);
     }
 
     public async Task<List<TelemetryHistoryResponse>> GetHistoryAsync(
@@ -116,7 +114,6 @@ public sealed class TelemetryService
         {
             Id = r.Id,
             DeviceId = r.DeviceId,
-            VoltageA = r.VoltageA,
             VoltageB = r.VoltageB,
             CurrentB = r.CurrentB,
             PowerB = r.PowerB,
@@ -139,7 +136,6 @@ public sealed class TelemetryService
         {
             DeviceId = state.DeviceId,
             Status = state.Status,
-            VoltageA = state.VoltageA,
             VoltageB = state.VoltageB,
             CurrentB = state.CurrentB,
             PowerB = state.PowerB,
@@ -161,6 +157,12 @@ public sealed class TelemetryService
                 DateTimeStyles.None, out var parsedLocal))
         {
             return DateTime.SpecifyKind(parsedLocal - DeviceTimeZoneOffset, DateTimeKind.Utc);
+        }
+
+        if (DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces,
+                out var parsedWithOffset))
+        {
+            return parsedWithOffset.UtcDateTime;
         }
 
         return null;

@@ -197,7 +197,6 @@ public sealed class RelayCommandService
         {
             DeviceId = state.DeviceId,
             Status = state.Status,
-            VoltageA = state.VoltageA,
             VoltageB = state.VoltageB,
             CurrentB = state.CurrentB,
             PowerB = state.PowerB,

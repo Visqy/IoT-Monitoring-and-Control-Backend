@@ -19,12 +19,13 @@ HiveMQ Cloud
     v
 ASP.NET Core Backend (MqttSubscriberService) --> PostgreSQL (Supabase / lokal)
     ^
-    | REST API
-Dashboard (fase berikutnya)
+    | REST API + SSE
+Dashboard Next.js
 ```
 
 Backend berbentuk **modular monolith**, controller-based Web API, dengan lapisan
-`Controller -> Service -> Repository` dan akses PostgreSQL manual via Npgsql (tanpa EF Core).
+`Controller -> Service -> Repository` dan akses PostgreSQL via Npgsql + Dapper dengan SQL
+parameterized manual (tanpa EF Core).
 
 ## Stack
 
@@ -35,17 +36,17 @@ Backend berbentuk **modular monolith**, controller-based Web API, dengan lapisan
 | MQTT broker | HiveMQ Cloud (TLS) |
 | MQTT client | MQTTnet |
 | Database | PostgreSQL (lokal atau Supabase) |
-| DB driver | Npgsql, SQL parameterized manual |
+| DB driver | Npgsql + Dapper, SQL parameterized manual |
 | API docs | OpenAPI + Scalar (`/scalar/v1`) |
 
 ## Struktur proyek
 
 ```
 IotBackend/
-|-- Controllers/         DevicesController, TelemetryController, RelayController, HealthController
-|-- BackgroundServices/  MqttSubscriberService, RelayCommandTimeoutService
-|-- Services/            TelemetryService, RelayCommandService, DeviceService
-|-- Repositories/        TelemetryRepository, DeviceStateRepository, RelayCommandRepository, DeviceRepository
+|-- Controllers/         Device, telemetry, relay, health, auth, RFID, dan SSE
+|-- BackgroundServices/  MQTT subscriber, command timeout, dan offline sweep
+|-- Services/            Business rule telemetry, relay, device, auth, dan RFID
+|-- Repositories/        Seluruh SQL PostgreSQL via Npgsql + Dapper
 |-- Models/              Representasi internal / payload MQTT
 |-- Contracts/           DTO response API
 |-- Infrastructure/      MqttClientService, DatabaseInitializer, EnvFile
@@ -53,6 +54,10 @@ IotBackend/
 |-- Database/            001_initial_schema.sql
 `-- Program.cs
 ```
+
+Telemetry aktif berasal dari satu PZEM-004T V3 100A CT setelah relay: `voltageB`, `currentB`,
+`powerB`, `energyB` (kWh), dan `frequencyB`. Saat relay OFF/sensor gagal dibaca, field angka
+bernilai `null`; tidak ada lagi field `voltageA`.
 
 ## Menjalankan proyek
 
@@ -115,6 +120,7 @@ di `/scalar/v1` saat development.
 
 ## Catatan
 
-Proyek ini adalah sisi **backend**. Firmware device (ESP32 + PZEM + RFID + Relay) berada di
-repo/folder terpisah dan berkomunikasi lewat MQTT sesuai kontrak topic `pzem`, `status`,
-`relay/set`, dan `relay/state`.
+Proyek ini adalah sisi **backend**. Firmware device berada di folder terpisah dan sudah
+mengimplementasikan PZEM-004T, RFID whitelist lokal LittleFS, status/LWT, serta relay dua arah.
+Kontrak lengkap topic/payload ada di `docs/MQTT_CONTRACT.md`; dashboard Next.js berada di repo
+`IoT-Frontend` dan sudah terhubung ke API utama.
